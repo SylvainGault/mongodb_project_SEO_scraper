@@ -101,6 +101,28 @@ def store_new_links(db, doc, urldoc):
 
 
 
+def store_doc(db, doc, urldoc, fetch_date):
+    coll_docs = db["docs"]
+
+    page_info = {
+        "url": urldoc["url"],
+        "scope": urldoc["scope"],
+        "fetched_at": fetch_date,
+        "html": str(doc),
+        "title": doc.title.text.strip(),
+        "emphasis": {
+            "strong": [tag.text.strip() for tag in doc.find_all("strong")],
+            "b": [tag.text.strip() for tag in doc.find_all("b")],
+            "em": [tag.text.strip() for tag in doc.find_all("em")],
+            "h1": [tag.text.strip() for tag in doc.find_all("h1")],
+            "h2": [tag.text.strip() for tag in doc.find_all("h2")],
+            "h3": [tag.text.strip() for tag in doc.find_all("h3")],
+        }
+    }
+    coll_docs.insert_one(page_info)
+
+
+
 def process_url(db, urldoc):
     print(f"scraping URL {urldoc['url']} with scope {urldoc['scope']}")
     coll_urls = db["urls"]
@@ -137,23 +159,7 @@ def process_url(db, urldoc):
     coll_logs.insert_one(log)
 
     doc = bs4.BeautifulSoup(res.text, "html.parser")
-
-    page_info = {
-        "url": urldoc["url"],
-        "scope": urldoc["scope"],
-        "fetched_at": fetch_date,
-        "html": res.text,
-        "title": doc.title.text.strip(),
-        "emphasis": {
-            "strong": [tag.text.strip() for tag in doc.find_all("strong")],
-            "b": [tag.text.strip() for tag in doc.find_all("b")],
-            "em": [tag.text.strip() for tag in doc.find_all("em")],
-            "h1": [tag.text.strip() for tag in doc.find_all("h1")],
-            "h2": [tag.text.strip() for tag in doc.find_all("h2")],
-            "h3": [tag.text.strip() for tag in doc.find_all("h3")],
-        }
-    }
-    coll_docs.insert_one(page_info)
+    store_doc(db, doc, urldoc, fetch_date)
     store_new_links(db, doc, urldoc)
     done(db, urldoc)
     return True

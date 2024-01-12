@@ -27,6 +27,7 @@ def main():
             "scope": scope,
             "status": "pending",
             "added_at": now,
+            "started_at": None,
     }
     # FIXME: possible race condition
     res = coll_urls.insert_one(doc)

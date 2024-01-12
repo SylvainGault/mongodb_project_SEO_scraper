@@ -13,6 +13,7 @@ import requests
 
 MAX_DOCS = 100
 HTTP_ERROR_RETRY_DELAY = datetime.timedelta(minutes=1)
+PROGRESS_TIMEOUT = datetime.timedelta(minutes=5)
 
 
 
@@ -25,13 +26,14 @@ def get_url(db):
         "$or": [
             {"status": "pending"},
             {"status": "retry_later", "retry_at": {"$lte": now}},
+            {"status": "inprogress", "started_at": {"$lte": now - PROGRESS_TIMEOUT}},
         ]
     }
     update_fields = {
         "status": "inprogress",
         "started_at": now
     }
-    url = coll_urls.find_one_and_update({"status": "pending"}, {"$set": update_fields})
+    url = coll_urls.find_one_and_update(search, {"$set": update_fields})
     if url is None:
         return None
 
@@ -134,6 +136,13 @@ def store_doc(db, doc, urldoc, fetch_date):
             "h3": [tag.text.strip() for tag in doc.find_all("h3")],
         }
     }
+
+    # This code would insert the page info only if it does not exist yet
+    # Which might happen if a scraper was assumed broken (timeouted) when it
+    # was just slow.
+    #search = {"url": urldoc["url"], "scope": urldoc["scope"]}
+    #coll_docs.update_one(search, {"$setOnInsert": page_info}, upsert=True)
+    # Instead we just insert the document anyway
     coll_docs.insert_one(page_info)
 
 

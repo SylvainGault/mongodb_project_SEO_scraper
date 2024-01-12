@@ -75,6 +75,32 @@ def ignored(db, urldoc):
 
 
 
+def store_new_links(db, doc, urldoc):
+    coll_urls = db["urls"]
+    coll_logs = db["logs"]
+
+    links = doc.find_all("a")
+    for link in links:
+        href = urllib.parse.urljoin(urldoc["url"], link["href"])
+
+        if not href.startswith(urldoc["scope"]):
+            continue
+
+        search = {
+            "url": href,
+            "scope": urldoc["scope"],
+        }
+        newurl = {
+            "url": href,
+            "scope": urldoc["scope"],
+            "status": "pending",
+            "added_at": datetime.datetime.now(),
+            "started_at": None,
+        }
+        coll_urls.update_one(search, {"$setOnInsert": newurl}, upsert=True)
+
+
+
 def process_url(db, urldoc):
     print(f"scraping URL {urldoc['url']} with scope {urldoc['scope']}")
     coll_urls = db["urls"]
@@ -128,27 +154,7 @@ def process_url(db, urldoc):
         }
     }
     coll_docs.insert_one(page_info)
-
-    links = doc.find_all("a")
-    for link in links:
-        href = urllib.parse.urljoin(urldoc["url"], link["href"])
-
-        if not href.startswith(urldoc["scope"]):
-            continue
-
-        search = {
-            "url": href,
-            "scope": urldoc["scope"],
-        }
-        newurl = {
-            "url": href,
-            "scope": urldoc["scope"],
-            "status": "pending",
-            "added_at": datetime.datetime.now(),
-            "started_at": None,
-        }
-        coll_urls.update_one(search, {"$setOnInsert": newurl}, upsert=True)
-
+    store_new_links(db, doc, urldoc)
     done(db, urldoc)
     return True
 

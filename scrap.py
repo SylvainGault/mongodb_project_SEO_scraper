@@ -10,6 +10,10 @@ import requests
 
 
 
+MAX_DOCS = 100
+
+
+
 def get_url(db):
     coll_urls = db["urls"]
     coll_logs = db["logs"]
@@ -56,11 +60,45 @@ def done(db, urldoc):
 
 
 
+def ignored(db, urldoc):
+    coll_urls = db["urls"]
+    coll_logs = db["logs"]
+    now = datetime.datetime.now()
+
+    res = coll_urls.update_one({"_id": urldoc["_id"]}, {"$set": {"status": "ignored"}})
+
+    log = {
+        "date": now,
+        "msg": f"Ignored {urldoc['url']} with scope {urldoc['scope']}",
+        "url": urldoc["url"],
+        "scope": urldoc["scope"],
+        "update_result": res.raw_result
+    }
+    coll_logs.insert_one(log)
+
+
+
 def process_url(db, urldoc):
     print(f"scraping URL {urldoc['url']} with scope {urldoc['scope']}")
     coll_urls = db["urls"]
     coll_docs = db["docs"]
     coll_logs = db["logs"]
+
+    ndocs = coll_docs.count_documents({"scope": urldoc["scope"]})
+    # Parallel scappers may overshoot the limit a bit
+    if ndocs >= MAX_DOCS:
+        msg = f"Not fetching {urldoc['url']} in scope {urldoc['scope']} because there are already {ndocs} in this scope"
+        print(msg)
+        log = {
+            "date": datetime.datetime.now(),
+            "msg": msg,
+            "url": urldoc["url"],
+            "scope": urldoc["scope"],
+            "ndocs": ndocs
+        }
+        coll_logs.insert_one(log)
+        ignored(db, urldoc)
+        return False
 
     res = requests.get(urldoc["url"])
     fetch_date = datetime.datetime.now()
@@ -114,6 +152,8 @@ def process_url(db, urldoc):
         # FIXME: race condition here
         coll_urls.insert_one(newurl)
 
+    done(db, urldoc)
+    return True
 
 
 
@@ -127,7 +167,6 @@ def main():
             break
 
         process_url(db, url_to_scrap)
-        done(db, url_to_scrap)
 
     print("No more URL to scrap")
 

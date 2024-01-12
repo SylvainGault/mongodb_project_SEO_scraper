@@ -22,6 +22,10 @@ def main():
     coll_logs = db["logs"]
 
     now = datetime.datetime.now()
+    search = {
+        "url": url,
+        "scope": scope,
+    }
     doc = {
             "url": url,
             "scope": scope,
@@ -29,9 +33,8 @@ def main():
             "added_at": now,
             "started_at": None,
     }
-    # FIXME: possible race condition
-    res = coll_urls.insert_one(doc)
-    print(f"URL inserted as id {res.inserted_id}")
+    res = coll_urls.update_one(search, {"$setOnInsert": doc}, upsert=True)
+    print(f"URL upserted as id {res.upserted_id}")
 
     log = {
         "date": now,

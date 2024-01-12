@@ -3,6 +3,7 @@
 import datetime
 import urllib
 import sys
+import time
 
 import bs4
 import pymongo
@@ -11,6 +12,7 @@ import requests
 
 
 MAX_DOCS = 100
+HTTP_ERROR_RETRY_DELAY = datetime.timedelta(minutes=1)
 
 
 
@@ -19,6 +21,12 @@ def get_url(db):
     coll_logs = db["logs"]
     now = datetime.datetime.now()
 
+    search = {
+        "$or": [
+            {"status": "pending"},
+            {"status": "retry_later", "retry_at": {"$lte": now}},
+        ]
+    }
     update_fields = {
         "status": "inprogress",
         "started_at": now
@@ -36,6 +44,13 @@ def get_url(db):
     coll_logs.insert_one(log)
 
     return url
+
+
+
+def finished(db):
+    coll_urls = db["urls"]
+    notdone = coll_urls.count_documents({"status": {"$in": ["pending", "retry_later"]}})
+    return notdone == 0
 
 
 
@@ -147,7 +162,6 @@ def process_url(db, urldoc):
 
     res = requests.get(urldoc["url"])
     fetch_date = datetime.datetime.now()
-    # TODO: handle errors during the request
     log = {
         "date": fetch_date,
         "msg": f"Getting URL {urldoc['url']} from scope {urldoc['scope']} got a response {res.status_code}, data size {len(res.content)}",
@@ -157,6 +171,23 @@ def process_url(db, urldoc):
         "content_size": len(res.content)
     }
     coll_logs.insert_one(log)
+
+    if res.status_code != 200:
+        try_count = urldoc.get("retry_count", 1)
+        if try_count >= 10:
+            update = {
+                "status": "failed",
+                "retry_at": None,
+                "try_count": try_count
+            }
+        else:
+            update = {
+                "status": "retry_later",
+                "retry_at": fetch_date + HTTP_ERROR_RETRY_DELAY,
+                "try_count": try_count
+            }
+        coll_urls.update_one({"_id": urldoc["_id"]}, {"$set": update})
+        return False
 
     doc = bs4.BeautifulSoup(res.text, "html.parser")
     store_doc(db, doc, urldoc, fetch_date)
@@ -170,10 +201,15 @@ def main():
     client = pymongo.MongoClient("mongodb://localhost:27017/")
     db = client["seo"]
 
-    while True:
+    while not finished(db):
         url_to_scrap = get_url(db)
+
+        # Some urls might need to be retried later
+        # Others might be "inprogress" but the scraper will fail eventually so
+        # we just wait and see
         if url_to_scrap is None:
-            break
+            time.sleep(1)
+            continue
 
         process_url(db, url_to_scrap)
 

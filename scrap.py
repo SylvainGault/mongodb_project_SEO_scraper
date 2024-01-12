@@ -19,16 +19,13 @@ def get_url(db):
     coll_logs = db["logs"]
     now = datetime.datetime.now()
 
-    # FIXME: race condition between find and update
-    url = coll_urls.find_one({"status": "pending"})
-    if url is None:
-        return None
-
     update_fields = {
         "status": "inprogress",
         "started_at": now
     }
-    coll_urls.update_one({"_id": url["_id"]}, {"$set": update_fields})
+    url = coll_urls.find_one_and_update({"status": "pending"}, {"$set": update_fields})
+    if url is None:
+        return None
 
     log = {
         "date": now,

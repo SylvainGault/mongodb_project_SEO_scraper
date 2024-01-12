@@ -136,9 +136,10 @@ def process_url(db, urldoc):
         if not href.startswith(urldoc["scope"]):
             continue
 
-        if coll_urls.find_one({"url": href, "scope": urldoc["scope"]}):
-            continue
-
+        search = {
+            "url": href,
+            "scope": urldoc["scope"],
+        }
         newurl = {
             "url": href,
             "scope": urldoc["scope"],
@@ -146,8 +147,7 @@ def process_url(db, urldoc):
             "added_at": datetime.datetime.now(),
             "started_at": None,
         }
-        # FIXME: race condition here
-        coll_urls.insert_one(newurl)
+        coll_urls.update_one(search, {"$setOnInsert": newurl}, upsert=True)
 
     done(db, urldoc)
     return True
